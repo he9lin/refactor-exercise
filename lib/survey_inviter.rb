@@ -12,52 +12,41 @@
 # responsibilities 3 and 4. Create a new class to perform these tasks, and call
 # it from this one.
 class SurveyInviter
-  EMAIL_REGEX = /\A([^@\s]+)@((?:[-a-z0-9]+\.)+[a-z]{2,})\z/
-
   def initialize(attributes = {})
-    @survey = attributes[:survey]
-    @message = attributes[:message] || ''
-    @recipients = attributes[:recipients] || ''
-    @sender = attributes[:sender]
+    @survey             = attributes[:survey]
+    @message            = attributes[:message] || ''
+    @sender             = attributes[:sender]
+    @recipients         = RecipientsCollection.new attributes[:recipients],
+                            string_splitter: StringSplitter.new,
+                            email_validator: EmailValidator.new
+    @invitation_creator = ObservableInvitationFactory.new \
+                            Invitation,
+                            InvitationNotification.new
   end
 
-  attr_reader :message, :recipients, :survey
+  attr_reader :message, :recipients
 
-  def valid?
-    valid_message? && valid_recipients?
-  end
+  delegate :valid?, to: :survey_inviter_validation
 
   def deliver
-    recipient_list.each do |email|
-      invitation = Invitation.create(
-        survey: @survey,
-        sender: @sender,
-        recipient_email: email,
-        status: 'pending'
-      )
-      Mailer.invitation_notification(invitation, @message)
+    recipients.each do |email|
+      create_invitation(email)
     end
-  end
-
-  def invalid_recipients
-    @invalid_recipients ||= recipient_list.map do |item|
-      unless item.match(EMAIL_REGEX)
-        item
-      end
-    end.compact
   end
 
   private
 
-  def valid_message?
-    @message.present?
+  def create_invitation(email)
+    @invitation_creator.create(
+      survey:          @survey,
+      sender:          @sender,
+      recipient_email: email,
+      status:          'pending',
+      message:         message
+    )
   end
 
-  def valid_recipients?
-    invalid_recipients.empty?
-  end
-
-  def recipient_list
-    @recipient_list ||= @recipients.gsub(/\s+/, '').split(/[\n,;]+/)
+  def survey_inviter_validation
+    @survey_inviter_validation ||= SurveyInviterValidation.new(self)
   end
 end
